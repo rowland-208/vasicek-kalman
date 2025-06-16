@@ -1,0 +1,336 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Vasicek Model & Kalman Filter Explorer</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+        .slider-label {
+            display: flex;
+            justify-content: space-between;
+            font-size: 0.875rem;
+        }
+        .toggle-label {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            cursor: pointer;
+        }
+    </style>
+</head>
+<body class="bg-gray-900 text-gray-200 flex flex-col md:flex-row h-screen antialiased">
+
+    <!-- Controls Panel -->
+    <div class="w-full md:w-80 lg:w-96 bg-gray-800 p-6 space-y-6 overflow-y-auto shadow-2xl">
+        <h1 class="text-2xl font-bold text-cyan-400">Vasicek & Kalman</h1>
+        <p class="text-sm text-gray-400">Explore how the filter performs when its assumed parameters don't match reality.</p>
+
+        <!-- True Model Controls -->
+        <div>
+            <h2 class="text-lg font-semibold border-b border-gray-600 pb-2 mb-4 text-emerald-400">True Model Parameters (Reality)</h2>
+            <div class="space-y-4">
+                <div>
+                    <label for="theta-change-type" class="block text-sm font-medium text-gray-300 mb-1">Theta Change Type</label>
+                    <select id="theta-change-type" class="w-full bg-gray-700 border border-gray-600 text-white rounded-lg p-2 focus:ring-cyan-500 focus:border-cyan-500">
+                        <option value="step" selected>Step Change</option>
+                        <option value="none">No Change</option>
+                        <option value="ramp">Linear Ramp</option>
+                        <option value="cosine">Cosine Wave</option>
+                    </select>
+                </div>
+                <div>
+                    <div class="slider-label">
+                        <label for="kappa-true">True Speed of Reversion (κ)</label>
+                        <span id="kappa-true-value" class="font-mono text-emerald-400"></span>
+                    </div>
+                    <input id="kappa-true" type="range" min="0.01" max="1" step="0.01" class="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer">
+                </div>
+                <div>
+                    <div class="slider-label">
+                        <label for="theta-true">Initial Long-term Mean (θ)</label>
+                        <span id="theta-true-value" class="font-mono text-emerald-400"></span>
+                    </div>
+                    <input id="theta-true" type="range" min="0.01" max="0.1" step="0.001" class="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer">
+                </div>
+                <div>
+                    <div class="slider-label">
+                        <label for="sigma-true">True Volatility (σ)</label>
+                        <span id="sigma-true-value" class="font-mono text-emerald-400"></span>
+                    </div>
+                    <input id="sigma-true" type="range" min="0.001" max="0.05" step="0.001" class="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer">
+                </div>
+                 <div>
+                    <div class="slider-label">
+                        <label for="measurement-noise-true">True Measurement Noise (R)</label>
+                        <span id="measurement-noise-true-value" class="font-mono text-emerald-400"></span>
+                    </div>
+                    <input id="measurement-noise-true" type="range" min="0.00001" max="0.001" step="0.00001" class="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer">
+                </div>
+            </div>
+        </div>
+
+        <!-- Kalman Filter Controls -->
+        <div>
+            <h2 class="text-lg font-semibold border-b border-gray-600 pb-2 mb-4 text-cyan-400">Kalman Filter Parameters (Model)</h2>
+            <div class="space-y-4">
+                 <div>
+                    <div class="slider-label">
+                        <label for="kappa-filter">Filter's Assumed Speed (κ)</label>
+                        <span id="kappa-filter-value" class="font-mono text-cyan-400"></span>
+                    </div>
+                    <input id="kappa-filter" type="range" min="0.01" max="1" step="0.01" class="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer">
+                </div>
+                 <div>
+                    <div class="slider-label">
+                        <label for="sigma-filter">Filter's Assumed Volatility (σ)</label>
+                        <span id="sigma-filter-value" class="font-mono text-cyan-400"></span>
+                    </div>
+                    <input id="sigma-filter" type="range" min="0.001" max="0.05" step="0.001" class="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer">
+                </div>
+                <div>
+                    <div class="slider-label">
+                        <label for="process-noise-filter">Filter's Heuristic Process Noise (Q)</label>
+                        <span id="process-noise-filter-value" class="font-mono text-cyan-400"></span>
+                    </div>
+                    <input id="process-noise-filter" type="range" min="0" max="0.0001" step="0.0000001" class="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer">
+                    <p class="text-xs text-gray-500 mt-1">Extra noise to distrust the model.</p>
+                </div>
+                <div>
+                    <div class="slider-label">
+                        <label for="measurement-noise-filter">Filter's Measurement Noise (R)</label>
+                        <span id="measurement-noise-filter-value" class="font-mono text-cyan-400"></span>
+                    </div>
+                    <input id="measurement-noise-filter" type="range" min="0.00001" max="0.001" step="0.00001" class="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer">
+                    <p class="text-xs text-gray-500 mt-1">Filter's belief about sample noise.</p>
+                </div>
+                <div class="pt-2">
+                     <label class="toggle-label text-sm">
+                        <span>Soft Reset Filter at 55%</span>
+                        <div class="relative inline-flex items-center cursor-pointer">
+                            <input type="checkbox" id="soft-reset-toggle" class="sr-only peer">
+                            <div class="w-11 h-6 bg-gray-600 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-0.5 after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-cyan-600"></div>
+                        </div>
+                    </label>
+                </div>
+            </div>
+        </div>
+
+        <button id="regenerate" class="w-full bg-cyan-600 hover:bg-cyan-500 text-white font-bold py-2 px-4 rounded-lg transition duration-300">
+            Regenerate with New Randomness
+        </button>
+    </div>
+
+    <!-- Chart Area -->
+    <div class="flex-1 p-6 bg-gray-900 flex items-center justify-center">
+        <div class="w-full h-full relative">
+            <canvas id="vasicekChart"></canvas>
+        </div>
+    </div>
+
+    <script>
+    document.addEventListener('DOMContentLoaded', () => {
+        // --- SEEDED PSEUDO-RANDOM NUMBER GENERATOR (PRNG) ---
+        const PRNG = {
+            seed: 1,
+            next: function() {
+                this.seed = (1103515245 * this.seed + 12345) % 2147483648;
+                return this.seed / 2147483648;
+            }
+        };
+
+        // --- DOM ELEMENT REFERENCES ---
+        const ctx = document.getElementById('vasicekChart').getContext('2d');
+        const controls = {
+            thetaChangeType: document.getElementById('theta-change-type'),
+            kappaTrue: document.getElementById('kappa-true'),
+            thetaTrue: document.getElementById('theta-true'),
+            sigmaTrue: document.getElementById('sigma-true'),
+            measurementNoiseTrue: document.getElementById('measurement-noise-true'),
+            kappaFilter: document.getElementById('kappa-filter'),
+            sigmaFilter: document.getElementById('sigma-filter'),
+            processNoiseFilter: document.getElementById('process-noise-filter'),
+            measurementNoiseFilter: document.getElementById('measurement-noise-filter'),
+            softResetToggle: document.getElementById('soft-reset-toggle'),
+        };
+        const values = {
+            kappaTrue: document.getElementById('kappa-true-value'),
+            thetaTrue: document.getElementById('theta-true-value'),
+            sigmaTrue: document.getElementById('sigma-true-value'),
+            measurementNoiseTrue: document.getElementById('measurement-noise-true-value'),
+            kappaFilter: document.getElementById('kappa-filter-value'),
+            sigmaFilter: document.getElementById('sigma-filter-value'),
+            processNoiseFilter: document.getElementById('process-noise-filter-value'),
+            measurementNoiseFilter: document.getElementById('measurement-noise-filter-value'),
+        };
+        const regenerateBtn = document.getElementById('regenerate');
+
+        let globalSeed = 1;
+
+        // --- CHART.JS INITIALIZATION ---
+        const chart = new Chart(ctx, {
+            type: 'line',
+            data: {},
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                scales: {
+                    x: { title: { display: true, text: 'Time Steps', color: '#9ca3af' }, ticks: { color: '#9ca3af', autoSkip: true, maxTicksLimit: 20 }, grid: { color: 'rgba(255, 255, 255, 0.1)' }},
+                    y: { title: { display: true, text: 'Interest Rate', color: '#9ca3af' }, ticks: { color: '#9ca3af', callback: value => (value * 100).toFixed(2) + '%' }, grid: { color: 'rgba(255, 255, 255, 0.1)' }}
+                },
+                plugins: { legend: { labels: { color: '#d1d5db' } }, tooltip: { callbacks: { label: function(context) { let label = context.dataset.label || ''; if (label) { label += ': '; } if (context.parsed.y !== null) { label += (context.parsed.y * 100).toFixed(2) + '%'; } return label; } } } },
+                animation: { duration: 0 }
+            }
+        });
+
+        // --- CORE LOGIC ---
+        function generateNormal() {
+            let u1 = 0, u2 = 0;
+            while (u1 === 0) u1 = PRNG.next();
+            while (u2 === 0) u2 = PRNG.next();
+            return Math.sqrt(-2.0 * Math.log(u1)) * Math.cos(2.0 * Math.PI * u2);
+        }
+
+        function generateVasicekSamples(kappa, theta, sigma, r0, numSteps, dt, trueMeasurementNoiseStdDev, changeType) {
+            const trueStates = [r0];
+            const samples = [r0 + generateNormal() * trueMeasurementNoiseStdDev];
+            const trueThetas = [theta];
+            let currentTheta = theta;
+            for (let i = 1; i < numSteps; i++) {
+                switch (changeType) {
+                    case 'step': if (i === Math.floor(numSteps / 2)) currentTheta = theta * 2; break;
+                    case 'ramp':
+                        const rampStart = Math.floor(numSteps / 4);
+                        const rampEnd = Math.floor(numSteps * 3 / 4);
+                        if (i > rampStart && i <= rampEnd) currentTheta = theta * (1 + (i - rampStart) / (rampEnd - rampStart));
+                        else if (i > rampEnd) currentTheta = theta * 2;
+                        else currentTheta = theta;
+                        break;
+                    case 'cosine':
+                        const period = numSteps / 2;
+                        currentTheta = theta + theta * Math.cos((2 * Math.PI / period) * i);
+                        break;
+                }
+                let newR;
+                if (changeType === 'step' && i === Math.floor(numSteps / 2)) newR = trueStates[i - 1] * 2;
+                else newR = trueStates[i - 1] + kappa * (currentTheta - trueStates[i - 1]) * dt + sigma * generateNormal() * Math.sqrt(dt);
+                trueStates.push(newR);
+                samples.push(newR + generateNormal() * trueMeasurementNoiseStdDev);
+                trueThetas.push(currentTheta);
+            }
+            return { trueStates, samples, trueThetas };
+        }
+        
+        function runKalmanFilter(samples, kappa_filter, sigma_filter, initialR, initialTheta, Q_val_filter, R_val_filter, dt, softResetEnabled) {
+            const initialP = [[0.25, 0], [0, 0.25]]; // Reduced initial covariance
+            let x_est = [[initialR], [initialTheta]];
+            let P = JSON.parse(JSON.stringify(initialP)); // Deep copy
+            
+            const F = [[1 - kappa_filter * dt, kappa_filter * dt], [0, 1]];
+            const H = [[1, 0]];
+            const model_process_noise_variance = Math.pow(sigma_filter, 2) * dt;
+            const Q = [[model_process_noise_variance + Q_val_filter, 0], [0, Q_val_filter * 0.001]];
+            const R = [[R_val_filter]];
+            const I = [[1, 0], [0, 1]];
+            const estimatedStates = [x_est[0][0]];
+            const estimatedThetas = [x_est[1][0]];
+            const resetPoint = Math.floor(samples.length * 0.55);
+
+            for (let i = 1; i < samples.length; i++) {
+                // Check for soft reset
+                if (softResetEnabled && i === resetPoint) {
+                    P = JSON.parse(JSON.stringify(initialP)); // Reset uncertainty
+                }
+
+                const x_pred = [[F[0][0] * x_est[0][0] + F[0][1] * x_est[1][0]], [F[1][0] * x_est[0][0] + F[1][1] * x_est[1][0]]];
+                const F_T = [[F[0][0], F[1][0]], [F[0][1], F[1][1]]];
+                const FP = [[F[0][0]*P[0][0] + F[0][1]*P[1][0], F[0][0]*P[0][1] + F[0][1]*P[1][1]], [F[1][0]*P[0][0] + F[1][1]*P[1][0], F[1][0]*P[0][1] + F[1][1]*P[1][1]]];
+                const P_pred_NoQ = [[FP[0][0]*F_T[0][0] + FP[0][1]*F_T[1][0], FP[0][0]*F_T[0][1] + FP[0][1]*F_T[1][1]], [FP[1][0]*F_T[0][0] + FP[1][1]*F_T[1][0], FP[1][0]*F_T[0][1] + FP[1][1]*F_T[1][1]]];
+                const P_pred = [[P_pred_NoQ[0][0] + Q[0][0], P_pred_NoQ[0][1] + Q[0][1]], [P_pred_NoQ[1][0] + Q[1][0], P_pred_NoQ[1][1] + Q[1][1]]];
+                const z = samples[i];
+                const y = z - (H[0][0] * x_pred[0][0] + H[0][1] * x_pred[1][0]);
+                const HP_pred = [H[0][0]*P_pred[0][0] + H[0][1]*P_pred[1][0], H[0][0]*P_pred[0][1] + H[0][1]*P_pred[1][1]];
+                const H_T = [[H[0][0]], [H[0][1]]];
+                const S_inv = 1 / (HP_pred[0]*H_T[0][0] + HP_pred[1]*H_T[1][0] + R[0][0]);
+                const P_pred_HT = [[P_pred[0][0]*H_T[0][0] + P_pred[0][1]*H_T[1][0]], [P_pred[1][0]*H_T[0][0] + P_pred[1][1]*H_T[1][0]]];
+                const K = [[P_pred_HT[0][0] * S_inv], [P_pred_HT[1][0] * S_inv]];
+                x_est = [[x_pred[0][0] + K[0][0] * y], [x_pred[1][0] + K[1][0] * y]];
+                const KH = [[K[0][0]*H[0][0], K[0][0]*H[0][1]], [K[1][0]*H[0][0], K[1][0]*H[0][1]]];
+                const I_minus_KH = [[I[0][0]-KH[0][0], I[0][1]-KH[0][1]], [I[1][0]-KH[1][0], I[1][1]-KH[1][1]]];
+                P = [[I_minus_KH[0][0]*P_pred[0][0] + I_minus_KH[0][1]*P_pred[1][0], I_minus_KH[0][0]*P_pred[0][1] + I_minus_KH[0][1]*P_pred[1][1]], [I_minus_KH[1][0]*P_pred[0][0] + I_minus_KH[1][1]*P_pred[1][0], I_minus_KH[1][0]*P_pred[0][1] + I_minus_KH[1][1]*P_pred[1][1]]];
+                estimatedStates.push(x_est[0][0]);
+                estimatedThetas.push(x_est[1][0]);
+            }
+            return { estimatedStates, estimatedThetas };
+        }
+
+        function regenerateAndPlot() {
+            PRNG.seed = globalSeed;
+            const changeType = controls.thetaChangeType.value;
+            const kappa_true = parseFloat(controls.kappaTrue.value);
+            const theta_true = parseFloat(controls.thetaTrue.value);
+            const sigma_true = parseFloat(controls.sigmaTrue.value);
+            const R_val_true = parseFloat(controls.measurementNoiseTrue.value);
+            const kappa_filter = parseFloat(controls.kappaFilter.value);
+            const sigma_filter = parseFloat(controls.sigmaFilter.value);
+            const Q_val_filter = parseFloat(controls.processNoiseFilter.value);
+            const R_val_filter = parseFloat(controls.measurementNoiseFilter.value);
+            const softResetEnabled = controls.softResetToggle.checked;
+
+            values.kappaTrue.textContent = kappa_true.toFixed(2);
+            values.thetaTrue.textContent = (theta_true * 100).toFixed(2) + '%';
+            values.sigmaTrue.textContent = (sigma_true * 100).toFixed(3) + '%';
+            values.measurementNoiseTrue.textContent = R_val_true.toExponential(1);
+            values.kappaFilter.textContent = kappa_filter.toFixed(2);
+            values.sigmaFilter.textContent = (sigma_filter * 100).toFixed(3) + '%';
+            values.processNoiseFilter.textContent = Q_val_filter.toExponential(1);
+            values.measurementNoiseFilter.textContent = R_val_filter.toExponential(1);
+            
+            const numSteps = 2048;
+            const dt = 0.1;
+            const r0 = 0.03;
+            const trueMeasurementNoiseStdDev = Math.sqrt(R_val_true);
+            const { trueStates, samples, trueThetas } = generateVasicekSamples(kappa_true, theta_true, sigma_true, r0, numSteps, dt, trueMeasurementNoiseStdDev, changeType);
+            const { estimatedStates, estimatedThetas } = runKalmanFilter(samples, kappa_filter, sigma_filter, r0, theta_true * 1.5, Q_val_filter, R_val_filter, dt, softResetEnabled);
+
+            chart.data.labels = Array.from({ length: numSteps }, (_, i) => i);
+            chart.data.datasets = [
+                { label: 'True State (r)', data: trueStates, borderColor: 'rgba(74, 222, 128, 0.8)', backgroundColor: 'rgba(74, 222, 128, 0.1)', borderWidth: 2, pointRadius: 0 },
+                { label: 'Noisy Samples', data: samples.map((s, i) => ({x: i, y: s})), borderColor: 'rgba(156, 163, 175, 0.4)', type: 'scatter', pointRadius: 2, pointBackgroundColor: 'rgba(156, 163, 175, 0.4)', borderWidth: 0, showLine: false },
+                { label: 'Kalman Estimate (r)', data: estimatedStates, borderColor: 'rgba(34, 211, 238, 1)', backgroundColor: 'rgba(34, 211, 238, 0.1)', borderWidth: 2.5, pointRadius: 0, borderDash: [5, 5] },
+                { label: 'True Long-Term Mean (θ)', data: trueThetas, borderColor: 'rgba(251, 146, 60, 0.8)', backgroundColor: 'transparent', borderWidth: 2, pointRadius: 0 },
+                { label: 'Kalman Estimate (θ)', data: estimatedThetas, borderColor: 'rgba(240, 100, 100, 1)', backgroundColor: 'transparent', borderWidth: 2.5, pointRadius: 0, borderDash: [5, 5] }
+            ];
+            chart.update();
+        }
+
+        Object.values(controls).forEach(control => control.addEventListener('input', regenerateAndPlot));
+        
+        regenerateBtn.addEventListener('click', () => {
+             globalSeed = Math.floor(Math.random() * 1000000);
+             regenerateAndPlot();
+        });
+
+        function setInitialValues() {
+            controls.kappaTrue.value = 0.5;
+            controls.thetaTrue.value = 0.04;
+            controls.sigmaTrue.value = 0.01;
+            controls.measurementNoiseTrue.value = 0.00015;
+            
+            controls.kappaFilter.value = 0.5;
+            controls.sigmaFilter.value = 0.01;
+            controls.processNoiseFilter.value = 0;
+            controls.measurementNoiseFilter.value = 0.00015;
+            controls.softResetToggle.checked = false;
+        }
+
+        setInitialValues();
+        regenerateAndPlot();
+    });
+    </script>
+</body>
+</html>
